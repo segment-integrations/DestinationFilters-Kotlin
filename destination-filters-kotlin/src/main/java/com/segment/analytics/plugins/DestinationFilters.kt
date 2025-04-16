@@ -21,7 +21,7 @@ import java.lang.ref.WeakReference
 class DestinationFilters : Plugin {
 
     companion object {
-        public const val version = "1.0.2"
+        public const val version = "1.2.0"
     }
 
     private val tsubScript = """
