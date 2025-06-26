@@ -11,6 +11,7 @@ import com.segment.analytics.kotlin.core.utilities.toBaseEvent
 import com.segment.analytics.substrata.kotlin.JSObject
 import com.segment.analytics.substrata.kotlin.JSScope
 import com.segment.analytics.substrata.kotlin.JsonElementConverter
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.encodeToJsonElement
@@ -39,13 +40,24 @@ class DestinationFilters : Plugin {
     override val type: Plugin.Type = Plugin.Type.Utility
     var engine: JSScope? = null
 
+    private var cachedRules: JsonElement? = null
+    private val metricsPlugin = MetricsPlugin()
+
     // Call this function when app is destroyed, to prevent memory leaks
     fun release() {
         engine?.release()
         engine = null
+        cachedRules = null
+        metricsPlugin.setOfActiveDestinations.clear()
+    }
+
+    override fun setup(analytics: Analytics) {
+        super.setup(analytics)
+        analytics.add(metricsPlugin)
     }
 
     override fun update(settings: Settings, type: Plugin.UpdateType) {
+        var engineRecreated = false
         if (engine == null) {
             engine = JSScope {
                 it.printStackTrace()
@@ -54,12 +66,21 @@ class DestinationFilters : Plugin {
                 evaluate(tsubScript)
                 evaluate(tsubEvaluate)
             }
+            engineRecreated = true
         }
 
-        removeExistingFilters()
+        var cacheInvalidated = false
+        if (cachedRules != settings.middlewareSettings["routingRules"]) {
+            cachedRules = settings.middlewareSettings["routingRules"]
+            cacheInvalidated = true
+        }
 
-        val setOfActiveDestinations = mutableSetOf<String>()
-        settings.middlewareSettings["routingRules"]?.safeJsonArray?.let { rules ->
+        // If the engine has NOT been recreated and the cache/rules have not been invalidated then we can exit early.
+        if (!engineRecreated && !cacheInvalidated) return
+
+        metricsPlugin.setOfActiveDestinations.clear()
+        removeExistingFilters()
+        cachedRules?.safeJsonArray?.let { rules ->
             for (it in rules) {
                 val rule = it.jsonObject
                 val destination: String =
@@ -67,13 +88,11 @@ class DestinationFilters : Plugin {
                 if (destination.isNotBlank()) {
                     val added = createFilter(destination, rule)
                     if (added) {
-                        setOfActiveDestinations.add(destination)
+                        metricsPlugin.setOfActiveDestinations.add(destination)
                     }
                 }
             }
         }
-
-        analytics.add(MetricsPlugin(setOfActiveDestinations))
     }
 
     private fun removeExistingFilters() {
