@@ -75,8 +75,7 @@ class DestinationFilters : Plugin {
             cacheInvalidated = true
         }
 
-        // if engine recreated or rules are different we need to remove and recreated filters
-        // otherwise, we can skip
+        // If the engine has NOT been recreated and the cache/rules have not been invalidated then we can exit early.
         if (!engineRecreated && !cacheInvalidated) return
 
         metricsPlugin.setOfActiveDestinations.clear()
